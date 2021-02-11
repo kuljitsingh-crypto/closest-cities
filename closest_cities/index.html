@@ -1,0 +1,546 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" type="text/css" href="style.css">
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600&family=Sofia&display=swap">
+    <title>City/State Search</title>
+</head>
+<body>
+    <header class="header">
+        <div class="site-title">Closest Cities</div>
+        <div class="nav-bar"><span ></span></div>
+        <div>
+            <ul class="make-invisible below-element headerlist-trans1 make-header-content-between move-headerlist-up">
+                <li class="recent-search default-marginleft">
+                    <span>Recent Search </span>
+                    <ul class="search-word-container make-invisible translate-right word-container-trans1">
+                    </ul>
+
+                </li>
+                <li class="default-marginleft" onclick="showAboutPage()">About</li>
+            </ul>
+        </div>
+    </header>
+    <section class="start-app">
+        <button type=button>Start App</button>
+    </section>
+    <main class="above-element">
+        <div class="search-input">
+            <form>
+                <input aria-label="city-search" name="city-search" type=text placeholder="City or State" autocomplete="off">
+            </form>
+        </div>
+        <div class="search-res">
+            <ul class="search-resp">
+            </ul>
+        </div>
+    </main>
+
+    
+    <footer class="above-element">
+        <div>
+            <div class="show-hide-about">
+                <span></span>
+            </div>
+        </div>
+        <div class="about-webapp ">
+            <p class="make-invisible">A simple web app in which users can search cities or states of India. Web shows the search result based on distances, in ascending order, between the user location and match.
+                 To get a response, a user has to grant permission to a website to use his/her location.
+                  A user can also check his/her five latest searches.
+            </p>
+        </div>
+    </footer>
+</body>
+<script>
+    const city_url="https://raw.githubusercontent.com/nshntarora/Indian-Cities-JSON/master/a-detailed-version.json";
+	const state_url="https://raw.githubusercontent.com/nshntarora/Indian-Cities-JSON/master/cities.json";
+    var states_list=[];
+    var cities_list={};
+    let user_pos=[];
+    let no_error=true;
+    let prev_search_word='';
+    let min_degree_change=0;//minimum degree change threshold
+    let shifted=false;//check whether word_container_parent shifted or not.
+    let left=true; //check whether transition was occured from left side or from right side.
+    const recent_search_entery_length=5 //maximum allowed length to save user searched word 
+    let height_changed=false; //check whether device height sufficient to show about page
+    const user=document.querySelector('input[type=text]');
+    const search_resp=document.querySelector(".search-resp");
+    const search_input=document.querySelector("input[name=city-search]");
+    const navBar=document.querySelector(".header .nav-bar");
+    const header=document.querySelector(".header");
+    const footer=document.querySelector("footer");
+    const main=document.querySelector("main");
+    const headerList=header.querySelector("ul");
+    const word_container=headerList.querySelector("li .search-word-container");
+    const word_container_parent=header.querySelector(".header .recent-search");
+    const start_app=document.querySelector(".start-app");
+    const about_app=footer.querySelector(".about-webapp p");
+    const show_hide_about= footer.querySelector(".show-hide-about");
+    const about_height=show_hide_about.clientHeight || show_hide_about.offsetHeight; 
+    const root=document.querySelector(":root");
+    const breakpoint_width=getComputedStyle(root).getPropertyValue("--breakpoint-width");
+
+    function containClass(tag,class_name){
+        let regx=new RegExp(class_name,"g");
+        return (tag.className.search(regx)!==-1)?true:false;
+
+     }
+
+    // spaced seperated class_name
+    function addClass(tag,class_names){
+        let all_classes=tag.className;
+        class_names.split(" ").forEach((class_name)=>{
+            if(!containClass(tag,class_name)) all_classes+=" "+class_name;
+        });
+        tag.className=all_classes.trim(); 
+        
+    }
+    function removeClass(tag,class_names){
+        class_names.split(" ").forEach((class_name)=>{
+            let regx=new RegExp(class_name,"g");
+            let temp_res=tag.className.replace(regx,"");
+            tag.className=temp_res.replace(/ {1,}/g," ")
+        });    
+    }
+     function toggleClass(tag,class_name){
+         if(tag.classList){
+             tag.classList.toggle(class_name)
+         }
+         else{
+             let regx=new RegExp(class_name,"g");
+             if(tag.className.search(regx)!==-1){
+                 tag.className=tag.className.replace(regx,"")
+             }
+             else{
+                 addClass(tag,class_name)
+             }
+         }
+
+     }
+     //fetch state data
+    fetch(state_url)
+    .then((res)=>res.json())
+    .then((data)=>states_list.push(...data));
+
+    // fetch city data
+    fetch(city_url)
+    .then((res)=>res.json())
+    .then((data)=>{
+     cities_list=data
+    });
+
+    //find array of matched city
+    function cityMatches(cities,search_key){
+        return cities.filter((city_name)=>{
+            let regex=new RegExp(search_key,"gi")
+            return city_name.name.match(regex)
+        });
+    }
+
+    //find array of matched state
+    function statesMatches(states,search_key){
+        return states.filter((state_name)=>{
+            let regex=new RegExp(search_key,"gi")
+            return state_name.state.match(regex)
+        });
+    }
+
+    //calculate between user position and matched city
+    function calDistance(longi1,lati1,longi2,lati2){
+        let long1=longi1/ 57.29577951;
+        let long2=longi2/ 57.29577951;
+        let lat1=lati1/ 57.29577951;
+        let lat2=lati2/ 57.29577951;
+        let distance=1.609344* 3963 * Math.acos((Math.sin(lat1) * Math.sin(lat2)) + Math.cos(lat1) * Math.cos(lat2) * Math.cos(long2-long1));
+        return distance;
+    }
+
+    //get userpostion/error
+    function callUserPositionFunc(){
+        if(navigator.geolocation){
+            navigator.geolocation.watchPosition(getUserPosition,showError,{enableHighAccuracy:true})
+        }
+        else{
+            current_msg="<li>Geolocation is not supported by this browser.</li><li>Sorry, for the inconvenience</li>"
+            search_resp.innerHTML=current_msg;
+        }
+    }
+    function getUserPosition(position){
+        if(user_pos.length>0){
+            let logi_chnge=Math.abs(user_pos[0]-position.coords.longitude);
+            let lati_chnge=Math.abs(user_pos[1]-position.coords.latitude);
+            if(logi_chnge>0|| lati_chnge>0){
+                if(user.value!==""){
+                    user_pos[0]=position.coords.longitude;
+                    user_pos[1]=position.coords.latitude;
+                    showDistance(user.value);
+                }
+            }
+        }
+        user_pos[0]=position.coords.longitude;
+        user_pos[1]=position.coords.latitude;  
+        }
+
+    function showError(error){
+        no_error=false;
+        let error_msg='';
+        switch(error.code){
+            case error.PERMISSION_DENIED:
+                error_msg = "<li>User denied the request for Geolocation.</li><li>Please, allow the web to use your location.</li>"
+                break;
+            case error.POSITION_UNAVAILABLE:
+                error_msg  = "<li>Location information is unavailable.</li><li>Check your settings.</li>"
+                break;
+            case error.TIMEOUT:
+                error_msg = "<li>The request to get user location timed out.</li><li>Please, try again after some time.</li>"
+                break;
+            case error.UNKNOWN_ERROR:
+                error_msg  = "<li>An unknown error occurred.</li><li>Searching for the cause of the error.</li>"
+                break;
+        }
+        search_resp.innerHTML=error_msg;
+        
+    }
+    //save calculated distances between user paosition and array of matched city
+    function calCityDistances(key,city_loc){
+        if(cities_list[key]!==undefined){
+            let  city_lat=cities_list[key]["latitude"];
+            let city_long=cities_list[key]["longitude"];
+           
+            city_loc[key]=parseFloat(calDistance(user_pos[0],user_pos[1],city_long,city_lat).toPrecision(5));
+        }
+    }
+    //show user list of responses of their search 
+    function showSearchResp(city_loc,city_state,sorted_city){
+        search_resp.innerHTML="";
+        let resp=[];
+       
+        resp=sorted_city.map((key)=>{
+            let search_word=user.value;
+            let regex=new RegExp(search_word,"gi");
+            let match_city_pos=key.search(regex);
+            let match_state_pos=city_state[key].search(regex);
+            let match_city=key[0].toUpperCase()+key.slice(1);
+            let match_state=city_state[key];
+            if (match_city_pos!==-1){
+                let new_search_word=search_word
+                if (match_city_pos==0){
+                    new_search_word=search_word[0].toUpperCase()+search_word.slice(1);
+                }
+               match_city=`${match_city.slice(0,match_city_pos)}<span style="background-color:yellow;">${new_search_word}</span>${key.slice(match_city_pos+search_word.length).toLowerCase()}`;
+            }
+            if(match_state_pos!==-1){
+                let new_search_word=search_word
+                if (match_state_pos==0){
+                    new_search_word=search_word[0].toUpperCase()+search_word.slice(1);
+                }
+                match_state=`${match_state.slice(0,match_state_pos)}<span style="background-color:yellow;">${new_search_word}</span>${city_state[key].slice(match_state_pos+search_word.length).toLowerCase()}`;
+            }
+            let res=`<li><span>${match_city}</span><span>${match_state}</span><span>${isFinite(city_loc[key])?city_loc[key]+" k.m":"N/A"}</span></li>`;
+            return res;
+        });
+        search_resp.innerHTML=resp.join(" ");
+    }
+    //save matched city and/or state  in array and sort them according to distance in asending order.
+    function showDistance(search_key,msg){
+        let city_loc={}
+        let city_state={}
+        cityMatches(states_list,search_key).forEach((place)=>{
+            city_loc[place.name.toLowerCase()]=Infinity;
+            city_state[place.name.toLowerCase()]=place.state;
+        });
+        statesMatches(states_list,search_key).forEach((place)=>{
+            city_loc[place.name.toLowerCase()]=Infinity;
+            city_state[place.name.toLowerCase()]=place.state;
+        });
+
+        if(Object.keys(city_loc).length>0){
+            for(key in city_loc){
+                calCityDistances(key,city_loc);
+            }
+        }
+        // sort the matched city according to increaseing distance,if distance is finite else sort alphabetically
+        let sorted_city=Object.keys(city_loc).sort((key1,key2)=>{
+            if(!isFinite(city_loc[key1]) && !isFinite(city_loc[key2])){
+                return key1>key2?1:key1<key2?-1:0;
+            }
+            return (city_loc[key1] > city_loc[key2])?1:-1;
+        });
+        search_res=Object.keys(city_loc).some((key)=>{return isFinite(city_loc[key])});
+        if(search_res ){
+            showSearchResp(city_loc,city_state,sorted_city);
+        }
+        else{ 
+            if(no_error){
+                search_resp.innerHTML=`<li>User Location Not Found.</li>
+                                        <li>Please,try agin after some time.</li>`;
+            }
+        } 
+    }
+    // save recent search word in local storage and show user as list of recent searched word
+    function showResp(){
+        if (user_pos.length==0)callUserPositionFunc();
+        
+        if(user.value.length>prev_search_word.length){
+            prev_search_word=user.value;
+        }
+        if (user.value!=="")showDistance(user.value);
+        else {
+            prev_search_word=prev_search_word[0].toUpperCase()+prev_search_word.slice(1);
+            let search_word_container=localStorage.getItem("search_words");
+            let prev_inner_element='';
+            if(search_word_container===null){
+                let word_arr=[];
+                word_arr.push(prev_search_word);
+                localStorage.setItem("search_words",JSON.stringify(word_arr));
+
+            }
+            else{
+                search_word_container=JSON.parse(search_word_container);
+                //check whether array reached limit of maximum allowed length of search word 
+                if(search_word_container.length>=recent_search_entery_length){
+                    search_word_container.shift();
+                    word_container.removeChild(word_container.childNodes[recent_search_entery_length-1]);
+                }
+                search_word_container.push(prev_search_word);
+                localStorage.setItem("search_words",JSON.stringify(search_word_container));
+                prev_inner_element=word_container.innerHTML;
+            }
+            word_container.innerHTML=`<li>${prev_search_word}</li>${prev_inner_element}`;
+            prev_search_word="";
+            search_resp.innerHTML="";
+        }
+            
+    }
+    function hideRecentSearch(){
+        word_container_parent.style.transform=`translateX(0px)`;
+        removeClass(word_container,"make-visible word-container-trans1");
+        addClass(word_container,"make-invisible word-container-trans2");
+        removeClass(main,"below-element");
+        removeClass(footer,"below-element");
+        addClass(main,"above-element");
+        addClass(footer,"above-element"); 
+        shifted=false;
+
+    }
+    //show/hide recent search word
+    word_container_parent.addEventListener("click",function(){
+        let opa=getComputedStyle(word_container).getPropertyValue('opacity');
+        let device_width=window.innerWidth || document.documentElement.clientWidth || document.body.clientWidth;
+        if(device_width<breakpoint_width){
+            if(opa==0){
+                removeClass(word_container,"make-invisible translate-right translate-left");
+                addClass(word_container,"translate-center make-visible");
+            }
+            else{
+                removeClass(word_container,"make-visible translate-center");
+                if (left){
+                    removeClass(word_container,"translate-right");       
+                    addClass(word_container,"translate-left make-invisible");
+                    left=false;
+                }
+                else{
+                    removeClass(word_container,"translate-left");
+                    addClass(word_container,"translate-right make-invisible");
+                    left=true; 
+                }  
+            }
+
+        }
+        else{
+            if(!shifted){
+                removeClass(main,"above-element");
+                addClass(main,"below-element");
+                let mid_point=Math.floor((device_width)/2);
+                word_container_parent.style.transform=`translateX(-${mid_point}px)`;
+                removeClass(word_container,"make-invisible word-container-trans2");
+                addClass(word_container,"make-visible word-container-trans1");
+                shifted=true;
+                let device_height=window.innerHeight || document.documentElement.clientHeight || document.body.clientHeight;
+                let word_container_height=(parseInt(getComputedStyle(word_container).height.split(" ")[0])+word_container.offsetTop+
+                                            parseInt(getComputedStyle(header).height.split(" ")[0]))
+                if(word_container_height>=device_height){
+                    removeClass(footer,"above-element");
+                    addClass(footer,"below-element");
+                }
+                else{
+                    removeClass(footer,"below-element");
+                    addClass(footer,"above-element");
+                }
+            }
+            else{
+               hideRecentSearch(); 
+            } 
+        }
+        
+    });
+    word_container_parent.addEventListener("transitionend",function(e){
+        if(e.target.className==='recent-search' && e.propertyName==="transform" && !shifted){
+            removeClass(main,"below-element");
+            removeClass(footer,"below-element");
+            addClass(main,"above-element");
+            addClass(footer,"above-element");
+        }
+    })
+    user.addEventListener("change",showResp);
+    user.addEventListener("input",showResp);
+
+    //change height of 'search-resp' class to add scroll bar to it.
+    function adjustRespHeight(){
+        let top_pos=search_resp.offsetTop;
+        let device_height=window.innerHeight ||document.body.clientHeight ||document.document.clientHeight;
+        let about_app_height=about_app.clientHeight || about_app.offsetHeight;
+        search_resp.style.height=(device_height-top_pos-about_height)+"px";
+    }
+    // show/hide nav bar
+    navBar.addEventListener("click",function(){
+        toggleClass(navBar.querySelector("span"),"rotated-span");
+        let top_pos=headerList.offsetTop;
+        if(top_pos==0){
+            removeClass(main,"above-element");
+            removeClass(footer,"above-element");
+            addClass(main,"below-element");
+            removeClass(headerList,"make-invisible headerlist-trans2 below-element move-headerlist-up");
+            addClass(headerList,"make-visible headerlist-trans1 above-element move-headerlist-down");
+            
+        }
+        else{
+            removeClass(headerList,"make-visible headerlist-trans1 above-element move-headerlist-down");
+            addClass(headerList,"make-invisible headerlist-trans2 below-element move-headerlist-up");
+            let opa=getComputedStyle(word_container).opacity;
+            if(opa==1){
+                removeClass(word_container,"make-visible");
+                addClass(word_container,"make-invisible");
+                removeClass(word_container,"translate-center");
+                if(left){
+                    removeClass(word_container,"translate-right");
+                    addClass(word_container,"translate-left");
+                    left=false;
+                }
+                else{
+                    removeClass(word_container,"translate-left");
+                    addClass(word_container,"translate-right");
+                    left=true; 
+                }
+            }
+        }
+    });
+
+    // headerList.addEventListener('transitionend',function(e){
+    //     if(e.propertyName==="top" && headerList.offsetTop===0)
+    //         { removeClass(main,"below-element");
+    //           removeClass(footer,"below-element");
+    //           addClass(main,"above-element");
+    //           addClass(footer,"above-element"); 
+    //     } 
+    // });
+    //start_app
+    start_app.querySelector("button").addEventListener("click",function(){
+        callUserPositionFunc();
+        start_app.style.display="none";
+        document.querySelector("body").style.backgroundImage="url(images/city1.jpg)";
+        addClass(header,"make-visible start-app-transition");
+        addClass(footer,"make-visible start-app-transition");
+        addClass(main,"make-visible start-app-transition");
+    });
+
+    // show/hide about page
+    function showAboutPage(){
+        let search_resp_height=parseInt(getComputedStyle(search_resp).height.split("px")[0]);
+        let about_app_opacity=parseInt(getComputedStyle(about_app).opacity);
+        let about_app_height=about_app.clientHeight || about_app.offsetHeight;
+        show_hide_about.querySelector('span').classList.toggle("spaced-span");
+        let new_height=(search_resp_height-about_app_height);
+        if(about_app_opacity==0){
+            search_resp.style.height=new_height+"px";
+            removeClass(about_app,"make-invisible");
+            addClass(about_app,"make-visible");
+            if(new_height>0) height_changed=true;
+            else height_changed=false;
+        }
+        else{
+            removeClass(about_app,"make-visible");
+            addClass(about_app,"make-invisible");
+            if(height_changed) search_resp.style.height=(search_resp_height+about_app_height)+"px";  
+        }
+    }
+    show_hide_about.addEventListener('click',showAboutPage);
+    navBar.addEventListener('transitionend',function(e){
+        if(e.propertyName==="opacity" && getComputedStyle(navBar).opacity==0){
+            removeClass(headerList,"make-invisible make-header-content-between move-headerlist-down");
+            addClass(headerList,"make-visible");
+            removeClass(navBar.querySelector("span"),"rotated-span");
+        }
+    });
+
+    headerList.addEventListener("transitionend",function(e){
+        let device_width=window.innerWidth || document.documentElement.clientWidth || document.body.clientWidth;
+        if(e.propertyName==="top" && headerList.offsetTop===0)
+            { removeClass(main,"below-element");
+              removeClass(footer,"below-element");
+              addClass(main,"above-element");
+              addClass(footer,"above-element"); 
+        } 
+        if(e.propertyName=="opacity" && getComputedStyle(headerList).opacity==0){
+            let li=headerList.querySelector("li",":first-child");
+            if(device_width>=breakpoint_width){
+                removeClass(li,"default-marginleft");
+                addClass(li,"add-new-marginleft");
+                addClass(headerList,"move-headerlist-up make-header-content-center ");
+            }
+            else{
+                removeClass(li,"add-new-marginleft");
+                addClass(li,"default-marginleft");
+            }
+        }      
+    });
+    function adjustWindow(){
+        let device_width=window.innerWidth || document.documentElement.clientWidth || document.body.clientWidth;
+        adjustRespHeight();
+        if(device_width>breakpoint_width){
+            if(containClass(headerList,"move-headerlist-down")){
+                removeClass(headerList,"make-visible above-element");
+                addClass(headerList,"make-invisible below-element");
+            }
+            else{
+                if(containClass(headerList,"move-headerlist-up")){
+                    let li=headerList.querySelector("li",":first-child");
+                    removeClass(li,"default-marginleft")
+                    addClass(li,"add-new-marginleft");
+                    removeClass(headerList,"make-invisible make-header-content-between");
+                    addClass(headerList,"make-visible make-header-content-center");
+
+                }
+            }
+            hideRecentSearch(); 
+        }
+        else{
+            if(containClass(headerList,"move-headerlist-up") && containClass(headerList,"make-visible")){
+                removeClass(headerList,"make-visible  make-header-content-center ");
+                addClass(headerList,"make-invisible make-header-content-between "); 
+                hideRecentSearch();
+            }
+        }
+    };
+    window.addEventListener('resize',adjustWindow);
+    window.addEventListener("load",function(){
+        adjustWindow();
+        let words=JSON.parse(localStorage.getItem("search_words")) || [];
+        if(words.length==0){
+            word_container.innerHTML='<li>You have to search first.</li>';
+        }
+        else{
+            let word_list='';
+            for(let i=words.length-1;i>=0;i--){
+                word_list+=`<li>${words[i]}</li>`;
+            }
+            word_container.innerHTML=word_list;   
+        }
+    });
+   
+</script>
+</html>
